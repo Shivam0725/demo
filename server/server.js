@@ -12,13 +12,17 @@ const User = require('./models/User');
 
 const app = express();
 
-// Middleware
+// Enhanced Middleware
 app.use(cors({
-  origin: ['http://localhost:3000', 'http://localhost:5001'],
+  origin: [
+    'http://localhost:3000', 
+    'http://localhost:5001',
+    'https://your-vercel-frontend.vercel.app' // Add your production frontend URL
+  ],
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   credentials: true
 }));
-app.use(bodyParser.json());
+app.use(bodyParser.json({ limit: '10mb' }));
 
 // Configure multer for file uploads
 const upload = multer({ 
@@ -28,10 +32,19 @@ const upload = multer({
   }
 });
 
-// MongoDB Connection
-mongoose.connect(process.env.MONGODB_URI)
+// Robust MongoDB Connection with error handling
+const connectWithRetry = () => {
+  mongoose.connect(process.env.MONGODB_URI, {
+    serverSelectionTimeoutMS: 5000,
+    socketTimeoutMS: 30000
+  })
   .then(() => console.log('MongoDB Connected'))
-  .catch(err => console.error('MongoDB Connection Error:', err));
+  .catch(err => {
+    console.error('MongoDB Connection Error:', err);
+    setTimeout(connectWithRetry, 5000); // Retry after 5 seconds
+  });
+};
+connectWithRetry();
 
 // Initialize Razorpay
 const razorpay = new Razorpay({
@@ -44,9 +57,19 @@ const DEMO_MODE = true;
 
 // Hugging Face Configuration
 const HF_API_URL = "https://api-inference.huggingface.co/models/facebook/bart-large-cnn";
-const HF_API_KEY = process.env.HF_API_KEY; // Add to your .env
+const HF_API_KEY = process.env.HF_API_KEY;
 
-// Routes
+// Keep-alive ping for Render free tier
+const pingSelf = () => {
+  if (process.env.NODE_ENV === 'production') {
+    setInterval(() => {
+      axios.get(`http://localhost:${process.env.PORT || 10000}/health`)
+        .catch(err => console.log('Keep-alive ping failed:', err.message));
+    }, 5 * 60 * 1000); // Every 5 minutes
+  }
+};
+
+// Routes (All existing routes preserved exactly as they were)
 app.post('/api/enroll', async (req, res) => {
   try {
     console.log('Received enrollment data:', req.body);
@@ -120,7 +143,7 @@ app.post('/api/verify', async (req, res) => {
 app.post('/api/create-order', async (req, res) => {
   try {
     const options = {
-      amount: 50000, // 500 Rs in paise
+      amount: 50000, // 500 Rs
       currency: 'INR',
       receipt: `receipt_${Date.now()}`
     };
@@ -228,12 +251,36 @@ app.post('/api/summarize-pdf', upload.single('pdf'), async (req, res) => {
   }
 });
 
-// Health check endpoint
+// Enhanced health check endpoint
 app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'OK', timestamp: new Date() });
+  res.status(200).json({ 
+    status: 'OK', 
+    timestamp: new Date(),
+    dbStatus: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
+  });
 });
 
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT} (DEMO MODE)`));
+// Server setup with Render optimizations
+const PORT = process.env.PORT || 10000; // Render requires 10000 for free tier
+const server = app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT} (DEMO MODE)`);
+  pingSelf(); // Start keep-alive pings
+});
+
+// Error handling
+server.on('error', (error) => {
+  console.error('Server error:', error);
+});
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received. Shutting down gracefully');
+  server.close(() => {
+    mongoose.connection.close(false, () => {
+      console.log('Server and MongoDB connection closed');
+      process.exit(0);
+    });
+  });
+});
 
 module.exports = app;

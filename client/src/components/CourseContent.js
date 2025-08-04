@@ -1,4 +1,4 @@
-// client/src/components/CourseContent.js
+
 import React from 'react';
 import Tabs from './Tabs';
 
