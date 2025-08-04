@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta http-equiv="Content-Security-Policy" 
+      content="default-src 'self';
+              script-src 'self' https://checkout.razorpay.com;
+              style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+              font-src 'self' data: https://fonts.gstatic.com;
+              img-src 'self' data:;
+              connect-src 'self' http://localhost:5000;
+              frame-src 'self' https://api.razorpay.com https://www.youtube.com;">
+  <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+</head>
+<body>
+  <noscript>You need to enable JavaScript to run this app.</noscript>
+  <div id="root"></div>
+</body>
+</html>
